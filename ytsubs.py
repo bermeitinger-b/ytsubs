@@ -23,44 +23,45 @@
 # OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-import urllib2
-import json
-import itertools
+import requests.api
+import requests.exceptions
 import os
 import sys
-from xml.etree.ElementTree import Element, SubElement, Comment, tostring
+from xml.etree.ElementTree import Element, SubElement, tostring
 
-baseurl = 'https://www.googleapis.com/youtube/v3'
-my_key = os.environ.get('YOUTUBE_SERVER_API_KEY')
+BASE_URL = 'https://www.googleapis.com/youtube/v3'
+API_KEY = os.environ.get('YOUTUBE_SERVER_API_KEY')
 
 # check for missing inputs
-if not my_key:
-  print "YOUTUBE_SERVER_API_KEY variable missing."
-  sys.exit(-1)
+if not API_KEY:
+    print("YOUTUBE_SERVER_API_KEY variable missing.")
+    sys.exit(-1)
 
 if not len(sys.argv) >= 2:
-  print "username and (optionally) destination file must be specified as first and second arguments."
-  sys.exit(-1)
+    print("username and (optionally) destination file must be specified as first and second arguments.")
+    sys.exit(-1)
+
 
 def get_channel_for_user(user):
-    url = baseurl + '/channels?part=id&forUsername='+ user + '&key=' + my_key
-    response = urllib2.urlopen(url)
-    data = json.load(response)
+    url = BASE_URL + '/channels?part=id&forUsername=' + user + '&key=' + API_KEY
+    response = requests.api.request('GET', url)
+    data = response.json()
     return data['items'][0]['id']
+
 
 def get_playlists(channel):
     playlists = []
     # we have to get the full snippet here, because there is no other way to get the channelId
     # of the channels you're subscribed to. 'id' returns a subscription id, which can only be
     # used to subsequently get the full snippet, so we may as well just get the whole lot up front.
-    url = baseurl + '/subscriptions?part=snippet&channelId='+ channel + '&maxResults=50&key=' + my_key
+    url = BASE_URL + '/subscriptions?part=snippet&channelId=' + channel + '&maxResults=50&key=' + API_KEY
 
     next_page = ''
     while True:
         # we are limited to 50 results. if the user subscribed to more than 50 channels
         # we have to make multiple requests here.
-        response = urllib2.urlopen(url+next_page)
-        data = json.load(response)
+        response = requests.api.request('GET', url + next_page)
+        data = response.json()
         subs = []
         for i in data['items']:
             if i['kind'] == 'youtube#subscription':
@@ -68,52 +69,54 @@ def get_playlists(channel):
 
         # actually getting the channel uploads requires knowing the upload playlist ID, which means
         # another request. luckily we can bulk these 50 at a time.
-        purl = baseurl + '/channels?part=contentDetails&id='+ '%2C'.join(subs) + '&maxResults=50&key=' + my_key
-        response = urllib2.urlopen(purl)
-        data2 = json.load(response)
+        purl = BASE_URL + '/channels?part=contentDetails&id=' + '%2C'.join(subs) + '&maxResults=50&key=' + API_KEY
+        response = requests.api.request('GET', purl)
+        data2 = response.json()
         for i in data2['items']:
             try:
                 playlists.append(i['contentDetails']['relatedPlaylists']['uploads'])
             except KeyError:
                 pass
 
-        try: # loop until there are no more pages
-            next_page = '&pageToken='+data['nextPageToken']
+        try:  # loop until there are no more pages
+            next_page = '&pageToken=' + data['nextPageToken']
         except KeyError:
             break
 
     return playlists
+
 
 def get_playlist_items(playlist):
     videos = []
 
     if playlist:
         # get the last 5 videos uploaded to the playlist
-        url = baseurl + '/playlistItems?part=contentDetails&playlistId='+ playlist + '&maxResults=5&key=' + my_key
-        response = urllib2.urlopen(url)
-        data = json.load(response)    
+        url = BASE_URL + '/playlistItems?part=contentDetails&playlistId=' + playlist + '&maxResults=5&key=' + API_KEY
+        response = requests.api.request('GET', url)
+        data = response.json()
         for i in data['items']:
             if i['kind'] == 'youtube#playlistItem':
                 videos.append(i['contentDetails']['videoId'])
 
     return videos
 
+
 def get_real_videos(video_ids):
-    videos = []
-    purl = baseurl + '/videos?part=snippet&id='+ '%2C'.join(video_ids) + '&maxResults=50&key=' + my_key
-    response = urllib2.urlopen(purl)
-    data = json.load(response)
+    purl = BASE_URL + '/videos?part=snippet&id=' + '%2C'.join(video_ids) + '&maxResults=50&key=' + API_KEY
+    response = requests.api.request('GET', purl)
+    data = response.json()
 
     return data['items']
+
 
 def chunks(l, n):
     """ Yield successive n-sized chunks from l.
     """
-    for i in xrange(0, len(l), n):
-        yield l[i:i+n]
+    for i in range(0, len(l), n):
+        yield l[i:i + n]
+
 
 def do_it():
-
     username = sys.argv[1]
 
     # get all upload playlists of subbed channels
@@ -132,7 +135,6 @@ def do_it():
 
     # sort them by date
     sortedvids = sorted(allvids, key=lambda k: k['snippet']['publishedAt'], reverse=True)
-
 
     # build the rss
     rss = Element('rss')
@@ -171,14 +173,12 @@ def do_it():
     f.close()
 
 
-
 if __name__ == '__main__':
     for i in range(3):
         try:
             do_it()
-        except urllib2.HTTPError, error:
+        except requests.exceptions.HTTPError as error:
             if error.code == 500:
                 continue
             raise error
         break
-
