@@ -27,10 +27,13 @@ import requests.api
 import requests.exceptions
 import os
 import sys
-from xml.etree.ElementTree import Element, SubElement, tostring
+import jinja2
+import datetime
 
 BASE_URL = 'https://www.googleapis.com/youtube/v3'
 API_KEY = os.environ.get('YOUTUBE_SERVER_API_KEY')
+FEED_TEMPLATE = 'feedtemplate.xml'
+UPDATE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
 
 # check for missing inputs
 if not API_KEY:
@@ -137,40 +140,25 @@ def do_it():
     sortedvids = sorted(allvids, key=lambda k: k['snippet']['publishedAt'], reverse=True)
 
     # build the rss
-    rss = Element('rss')
-    rss.attrib['version'] = '2.0'
-    channel = SubElement(rss, 'channel')
-    title = SubElement(channel, 'title')
-    title.text = 'Youtube subscriptions for ' + username
-    link = SubElement(channel, 'link')
-    link.text = 'http://www.youtube.com/'
+    env = jinja2.Environment(loader=jinja2.FileSystemLoader('.'))
 
+    entries = []
     # add the most recent 20
     for v in sortedvids[:20]:
-        item = SubElement(channel, 'item')
-        title = SubElement(item, 'title')
-        title.text = v['snippet']['title']
-        link = SubElement(item, 'link')
-        link.text = 'http://youtube.com/watch?v=' + v['id']
-        author = SubElement(item, 'author')
-        author.text = v['snippet']['channelTitle']
-        guid = SubElement(item, 'guid')
-        guid.attrib['isPermaLink'] = 'true'
-        guid.text = 'http://youtube.com/watch?v=' + v['id']
-        pubDate = SubElement(item, 'pubDate')
-        pubDate.text = v['snippet']['publishedAt']
-        description = SubElement(item, 'description')
-        description.text = v['snippet']['description']
+        entries.append({
+            'title': v['snippet']['title'],
+            'link': 'http://youtube.com/watch?v=' + v['id'],
+            'author': v['snippet']['channelTitle'],
+            'pubDate': v['snippet']['publishedAt'],
+            'description': v['snippet']['description']
+        })
 
-    if len(sys.argv) >= 3:
-        filename = sys.argv[2]
-        f = open(filename, 'w')
-    else:
-        f = sys.stdout
-
-    f.write('<?xml version="1.0" encoding="UTF-8" ?>')
-    f.write(tostring(rss).encode('utf-8'))
-    f.close()
+    with open(sys.argv[2], mode='w') as f:
+        f.write(env.get_template(FEED_TEMPLATE).render(
+            user=username,
+            update_time=datetime.datetime.now().strftime(UPDATE_TIME_FORMAT),
+            entries=entries
+        ))
 
 
 if __name__ == '__main__':

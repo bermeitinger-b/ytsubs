@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+    <title type="text">YouTube subscriptions for {{user}}</title>
+    <updated>{{update_time}}</updated>
+    <logo>https://www.youtube.com/favicon.ico</logo>
+    {%for entry in entries %}
+    <entry>
+        <title>{{entry['title']}}</title>
+        <link href="{{entry['link']}}"/>
+        <author>
+            <name>{{entry['author']}}</name>
+        </author>
+        <published>{{entry['pubDate']}}</published>
+        <content type="html">{{entry['description']}}</content>
+    </entry>
+    {%endfor%}
+</feed>
