@@ -149,7 +149,7 @@ def do_it():
 
     entries = []
 
-    for v in sorted(allvids, key=lambda k: k['snippet']['publishedAt'], reverse=True):
+    for v in sorted(allvids, key=lambda k: k['snippet']['publishedAt'], reverse=True)[:50]:
         entries.append({
             'title': html.escape(v['snippet']['title']),
             'link': 'https://youtube.com/watch?v=' + v['id'],
