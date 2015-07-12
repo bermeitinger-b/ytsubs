@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Copyright (C) 2014 Alistair Buxton <a.j.buxton@gmail.com>
 #
@@ -24,25 +24,30 @@
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 import requests.api
-import requests.exceptions
 import os
 import sys
 import jinja2
 import datetime
+import html
+import re
 
 BASE_URL = 'https://www.googleapis.com/youtube/v3'
 API_KEY = os.environ.get('YOUTUBE_SERVER_API_KEY')
 FEED_TEMPLATE = 'feedtemplate.xml'
 UPDATE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
 
-# check for missing inputs
-if not API_KEY:
-    print("YOUTUBE_SERVER_API_KEY variable missing.")
-    sys.exit(-1)
-
-if not len(sys.argv) >= 2:
-    print("username and (optionally) destination file must be specified as first and second arguments.")
-    sys.exit(-1)
+DURATION = re.compile(
+    'P'   # designates a period
+    '(?:(?P<years>\d+)Y)?'   # years
+    '(?:(?P<months>\d+)M)?'  # months
+    '(?:(?P<weeks>\d+)W)?'   # weeks
+    '(?:(?P<days>\d+)D)?'    # days
+    '(?:T' # time part must begin with a T
+    '(?:(?P<hours>\d+)H)?'   # hourss
+    '(?:(?P<minutes>\d+)M)?' # minutes
+    '(?:(?P<seconds>\d+)S)?' # seconds
+    ')?'   # end of time part
+)
 
 
 def get_channel_for_user(user):
@@ -105,7 +110,10 @@ def get_playlist_items(playlist):
 
 
 def get_real_videos(video_ids):
-    purl = BASE_URL + '/videos?part=snippet&id=' + '%2C'.join(video_ids) + '&maxResults=50&key=' + API_KEY
+    purl = BASE_URL + '/videos?part=snippet%2CcontentDetails&id='\
+                    + '%2C'.join(video_ids)\
+                    + '&maxResults=50&fields=items(contentDetails%2Cid%2Ckind%2Csnippet)'\
+                    + '&key=' + API_KEY
     response = requests.api.request('GET', purl)
     data = response.json()
 
@@ -136,21 +144,20 @@ def do_it():
     for chunk in chunks(allitems, 50):
         allvids.extend(get_real_videos(chunk))
 
-    # sort them by date
-    sortedvids = sorted(allvids, key=lambda k: k['snippet']['publishedAt'], reverse=True)
-
-    # build the rss
+    # build the atom feed
     env = jinja2.Environment(loader=jinja2.FileSystemLoader('.'))
 
     entries = []
-    # add the most recent 20
-    for v in sortedvids[:20]:
+
+    for v in sorted(allvids, key=lambda k: k['snippet']['publishedAt'], reverse=True):
         entries.append({
-            'title': v['snippet']['title'],
-            'link': 'http://youtube.com/watch?v=' + v['id'],
-            'author': v['snippet']['channelTitle'],
+            'title': html.escape(v['snippet']['title']),
+            'link': 'https://youtube.com/watch?v=' + v['id'],
+            'author': html.escape(v['snippet']['channelTitle']),
             'pubDate': v['snippet']['publishedAt'],
-            'description': v['snippet']['description']
+            'description': html.escape(v['snippet']['description']).replace('\n', '<br />'),
+            'thumbnail': v['snippet']['thumbnails']['medium']['url'],
+            'duration': parse_duration(v['contentDetails']['duration'])
         })
 
     with open(sys.argv[2], mode='w') as f:
@@ -161,12 +168,36 @@ def do_it():
         ))
 
 
+def parse_duration(duration):
+    duration = DURATION.match(duration).groupdict()
+    result = ""
+    hours = 0
+    if duration['years'] is not None:
+        result += duration['years'] + 'y '
+    if duration['weeks'] is not None:
+        result += duration['weeks'] + 'w '
+    if duration['days'] is not None:
+        hours += int(duration['days']) * 24
+    if duration['hours'] is not None or hours != 0:
+        result += repr(int(duration['hours']) + hours) + ':'
+    if duration['minutes'] is not None:
+        result += duration['minutes'] + ':'
+    else:
+        result += '00:'
+    if duration['seconds'] is not None:
+        result += duration['seconds']
+    else:
+        result += '00'
+
+    return result
+
+
 if __name__ == '__main__':
-    for i in range(3):
-        try:
-            do_it()
-        except requests.exceptions.HTTPError as error:
-            if error.code == 500:
-                continue
-            raise error
-        break
+    if not len(sys.argv) >= 2:
+        print("username and (optionally) destination file must be specified as first and second arguments.")
+        sys.exit(-1)
+    # check for missing inputs
+    if not API_KEY:
+        print("YOUTUBE_SERVER_API_KEY variable missing.")
+        sys.exit(-1)
+    do_it()

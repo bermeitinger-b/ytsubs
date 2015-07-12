@@ -2,7 +2,12 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <title type="text">YouTube subscriptions for {{user}}</title>
     <updated>{{update_time}}</updated>
+    <id>https://www.youtube.com</id>
     <logo>https://www.youtube.com/favicon.ico</logo>
+    <link rel="alternate" type="text/html" href="https://www.youtube.com" />
+    <author>
+        <name>{{user}}</name>
+    </author>
     {%for entry in entries %}
     <entry>
         <title>{{entry['title']}}</title>
@@ -11,7 +16,19 @@
             <name>{{entry['author']}}</name>
         </author>
         <published>{{entry['pubDate']}}</published>
-        <content type="html">{{entry['description']}}</content>
+        <content type="xhtml">
+            <div xmlns="http://www.w3.org/1999/xhtml">
+                <a href="{{entry['link']}}">
+                    <img src="{{entry['thumbnail']}}" alt="{{entry['title']}}" height="180" width="320" />
+                </a>
+                <p>
+                    {{entry['duration']}}
+                </p>
+                <p>
+                    {{entry['description']}}
+                </p>
+            </div>
+        </content>
     </entry>
     {%endfor%}
 </feed>
