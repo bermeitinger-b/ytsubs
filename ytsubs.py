@@ -36,6 +36,8 @@ API_KEY = os.environ.get('YOUTUBE_SERVER_API_KEY')
 FEED_TEMPLATE = 'feedtemplate.xml'
 UPDATE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
 
+MAX_DESCRIPTION_LENGTH = 200
+
 DURATION = re.compile(
     'P'   # designates a period
     '(?:(?P<years>\d+)Y)?'   # years
@@ -155,7 +157,7 @@ def do_it():
             'link': 'https://youtube.com/watch?v=' + v['id'],
             'author': html.escape(v['snippet']['channelTitle']),
             'pubDate': v['snippet']['publishedAt'],
-            'description': html.escape(v['snippet']['description']).replace('\n', '<br />'),
+            'description': parse_description(v['snippet']['description']),
             'thumbnail': v['snippet']['thumbnails']['medium']['url'],
             'duration': parse_duration(v['contentDetails']['duration'])
         })
@@ -166,6 +168,15 @@ def do_it():
             update_time=datetime.datetime.now().strftime(UPDATE_TIME_FORMAT),
             entries=entries
         ))
+
+
+def parse_description(description):
+    # lol what an awesome pythonic way to to this
+    # 1. use description if not longer than max length
+    # 2. if longer than max length, cut and add dots
+    # 3. escape html stuff
+    # 4. replace \n newlines with <br />
+    return html.escape(description if len(description) > MAX_DESCRIPTION_LENGTH else description[:MAX_DESCRIPTION_LENGTH] + "…").replace('\n', '<br />')
 
 
 def parse_duration(duration):
