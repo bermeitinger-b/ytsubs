@@ -147,7 +147,7 @@ def do_it():
         allvids.extend(get_real_videos(chunk))
 
     # build the atom feed
-    env = jinja2.Environment(loader=jinja2.FileSystemLoader('.'))
+    env = jinja2.Environment(loader=jinja2.FileSystemLoader(os.getcwd()))
 
     entries = []
 
@@ -192,10 +192,14 @@ def parse_duration(duration):
     if duration['hours'] is not None or hours != 0:
         result += repr(int(duration['hours']) + hours) + ':'
     if duration['minutes'] is not None:
+        if len(duration['minutes']) == 1:
+            result += '0'
         result += duration['minutes'] + ':'
     else:
         result += '00:'
     if duration['seconds'] is not None:
+        if len(duration['seconds']) == 1:
+            result += '0'
         result += duration['seconds']
     else:
         result += '00'
