@@ -101,12 +101,17 @@ def get_playlist_items(playlist):
 
     if playlist:
         # get the last 5 videos uploaded to the playlist
-        url = BASE_URL + '/playlistItems?part=contentDetails&playlistId=' + playlist + '&maxResults=5&key=' + API_KEY
-        response = requests.api.request('GET', url)
-        data = response.json()
-        for i in data['items']:
-            if i['kind'] == 'youtube#playlistItem':
-                videos.append(i['contentDetails']['videoId'])
+        try:
+            url = BASE_URL + '/playlistItems?part=contentDetails&playlistId=' + playlist + '&maxResults=5&key=' + API_KEY
+            response = requests.api.request('GET', url)
+            data = response.json()
+            for i in data['items']:
+                if i['kind'] == 'youtube#playlistItem':
+                    videos.append(i['contentDetails']['videoId'])
+        except Exception as e:
+            print(e)
+            print(videos)
+            sys.exit(-4)
 
     return videos
 
@@ -176,7 +181,8 @@ def parse_description(description):
     # 2. if longer than max length, cut and add dots
     # 3. escape html stuff
     # 4. replace \n newlines with <br />
-    return html.escape(description if len(description) > MAX_DESCRIPTION_LENGTH else description[:MAX_DESCRIPTION_LENGTH] + "…").replace('\n', '<br />')
+    description = description if len(description) <= MAX_DESCRIPTION_LENGTH else description[:MAX_DESCRIPTION_LENGTH] + "…"
+    return html.escape(description).replace('\n', '<br />')
 
 
 def parse_duration(duration):
