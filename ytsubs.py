@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Copyright (C) 2014 Alistair Buxton <a.j.buxton@gmail.com>
 #
@@ -23,44 +23,55 @@
 # OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-import urllib2
-import json
-import itertools
+import requests.api
 import os
 import sys
-from xml.etree.ElementTree import Element, SubElement, Comment, tostring
+import jinja2
+import datetime
+import html
+import re
 
-baseurl = 'https://www.googleapis.com/youtube/v3'
-my_key = os.environ.get('YOUTUBE_SERVER_API_KEY')
+BASE_URL = 'https://www.googleapis.com/youtube/v3'
+API_KEY = os.environ.get('YOUTUBE_SERVER_API_KEY')
+FEED_TEMPLATE = 'feedtemplate.xml'
+UPDATE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
 
-# check for missing inputs
-if not my_key:
-  print "YOUTUBE_SERVER_API_KEY variable missing."
-  sys.exit(-1)
+MAX_DESCRIPTION_LENGTH = 200
 
-if not len(sys.argv) >= 2:
-  print "username and (optionally) destination file must be specified as first and second arguments."
-  sys.exit(-1)
+DURATION = re.compile(
+    'P'   # designates a period
+    '(?:(?P<years>\d+)Y)?'   # years
+    '(?:(?P<months>\d+)M)?'  # months
+    '(?:(?P<weeks>\d+)W)?'   # weeks
+    '(?:(?P<days>\d+)D)?'    # days
+    '(?:T' # time part must begin with a T
+    '(?:(?P<hours>\d+)H)?'   # hourss
+    '(?:(?P<minutes>\d+)M)?' # minutes
+    '(?:(?P<seconds>\d+)S)?' # seconds
+    ')?'   # end of time part
+)
+
 
 def get_channel_for_user(user):
-    url = baseurl + '/channels?part=id&forUsername='+ user + '&key=' + my_key
-    response = urllib2.urlopen(url)
-    data = json.load(response)
+    url = BASE_URL + '/channels?part=id&forUsername=' + user + '&key=' + API_KEY
+    response = requests.api.request('GET', url)
+    data = response.json()
     return data['items'][0]['id']
+
 
 def get_playlists(channel):
     playlists = []
     # we have to get the full snippet here, because there is no other way to get the channelId
     # of the channels you're subscribed to. 'id' returns a subscription id, which can only be
     # used to subsequently get the full snippet, so we may as well just get the whole lot up front.
-    url = baseurl + '/subscriptions?part=snippet&channelId='+ channel + '&maxResults=50&key=' + my_key
+    url = BASE_URL + '/subscriptions?part=snippet&channelId=' + channel + '&maxResults=50&key=' + API_KEY
 
     next_page = ''
     while True:
         # we are limited to 50 results. if the user subscribed to more than 50 channels
         # we have to make multiple requests here.
-        response = urllib2.urlopen(url+next_page)
-        data = json.load(response)
+        response = requests.api.request('GET', url + next_page)
+        data = response.json()
         subs = []
         for i in data['items']:
             if i['kind'] == 'youtube#subscription':
@@ -68,52 +79,60 @@ def get_playlists(channel):
 
         # actually getting the channel uploads requires knowing the upload playlist ID, which means
         # another request. luckily we can bulk these 50 at a time.
-        purl = baseurl + '/channels?part=contentDetails&id='+ '%2C'.join(subs) + '&maxResults=50&key=' + my_key
-        response = urllib2.urlopen(purl)
-        data2 = json.load(response)
+        purl = BASE_URL + '/channels?part=contentDetails&id=' + '%2C'.join(subs) + '&maxResults=50&key=' + API_KEY
+        response = requests.api.request('GET', purl)
+        data2 = response.json()
         for i in data2['items']:
             try:
                 playlists.append(i['contentDetails']['relatedPlaylists']['uploads'])
             except KeyError:
                 pass
 
-        try: # loop until there are no more pages
-            next_page = '&pageToken='+data['nextPageToken']
+        try:  # loop until there are no more pages
+            next_page = '&pageToken=' + data['nextPageToken']
         except KeyError:
             break
 
     return playlists
+
 
 def get_playlist_items(playlist):
     videos = []
 
     if playlist:
         # get the last 5 videos uploaded to the playlist
-        url = baseurl + '/playlistItems?part=contentDetails&playlistId='+ playlist + '&maxResults=5&key=' + my_key
-        response = urllib2.urlopen(url)
-        data = json.load(response)    
+        url = BASE_URL + '/playlistItems?part=contentDetails&playlistId=' + playlist + '&maxResults=5&key=' + API_KEY
+        response = requests.api.request('GET', url)
+        data = response.json()
+        if 'items' not in data:
+            print('items are not in data; try against next time')
+            sys.exit(-1)
         for i in data['items']:
             if i['kind'] == 'youtube#playlistItem':
                 videos.append(i['contentDetails']['videoId'])
 
     return videos
 
+
 def get_real_videos(video_ids):
-    videos = []
-    purl = baseurl + '/videos?part=snippet&id='+ '%2C'.join(video_ids) + '&maxResults=50&key=' + my_key
-    response = urllib2.urlopen(purl)
-    data = json.load(response)
+    purl = BASE_URL + '/videos?part=snippet%2CcontentDetails&id='\
+                    + '%2C'.join(video_ids)\
+                    + '&maxResults=50&fields=items(contentDetails%2Cid%2Ckind%2Csnippet)'\
+                    + '&key=' + API_KEY
+    response = requests.api.request('GET', purl)
+    data = response.json()
 
     return data['items']
+
 
 def chunks(l, n):
     """ Yield successive n-sized chunks from l.
     """
-    for i in xrange(0, len(l), n):
-        yield l[i:i+n]
+    for i in range(0, len(l), n):
+        yield l[i:i + n]
+
 
 def do_it():
-
     username = sys.argv[1]
 
     # get all upload playlists of subbed channels
@@ -130,55 +149,74 @@ def do_it():
     for chunk in chunks(allitems, 50):
         allvids.extend(get_real_videos(chunk))
 
-    # sort them by date
-    sortedvids = sorted(allvids, key=lambda k: k['snippet']['publishedAt'], reverse=True)
+    # build the atom feed
+    env = jinja2.Environment(loader=jinja2.FileSystemLoader(os.getcwd()))
+
+    entries = []
+
+    for v in sorted(allvids, key=lambda k: k['snippet']['publishedAt'], reverse=True)[:50]:
+        entries.append({
+            'title': html.escape(v['snippet']['title']),
+            'link': 'https://youtube.com/watch?v=' + v['id'],
+            'author': html.escape(v['snippet']['channelTitle']),
+            'pubDate': v['snippet']['publishedAt'],
+            'description': parse_description(v['snippet']['description']),
+            'thumbnail': v['snippet']['thumbnails']['medium']['url'],
+            'duration': parse_duration(v['contentDetails']['duration'])
+        })
+
+    with open(sys.argv[2], mode='w') as f:
+        f.write(env.get_template(FEED_TEMPLATE).render(
+            user=username,
+            update_time=datetime.datetime.now().strftime(UPDATE_TIME_FORMAT),
+            entries=entries
+        ))
 
 
-    # build the rss
-    rss = Element('rss')
-    rss.attrib['version'] = '2.0'
-    channel = SubElement(rss, 'channel')
-    title = SubElement(channel, 'title')
-    title.text = 'Youtube subscriptions for ' + username
-    link = SubElement(channel, 'link')
-    link.text = 'http://www.youtube.com/'
+def parse_description(description):
+    # lol what an awesome pythonic way to to this
+    # 1. use description if not longer than max length
+    # 2. if longer than max length, cut and add dots
+    # 3. escape html stuff
+    # 4. replace \n newlines with <br />
+    description = description if len(description) <= MAX_DESCRIPTION_LENGTH else description[:MAX_DESCRIPTION_LENGTH] + "…"
+    return html.escape(description).replace('\n', '<br />')
 
-    # add the most recent 20
-    for v in sortedvids[:20]:
-        item = SubElement(channel, 'item')
-        title = SubElement(item, 'title')
-        title.text = v['snippet']['title']
-        link = SubElement(item, 'link')
-        link.text = 'http://youtube.com/watch?v=' + v['id']
-        author = SubElement(item, 'author')
-        author.text = v['snippet']['channelTitle']
-        guid = SubElement(item, 'guid')
-        guid.attrib['isPermaLink'] = 'true'
-        guid.text = 'http://youtube.com/watch?v=' + v['id']
-        pubDate = SubElement(item, 'pubDate')
-        pubDate.text = v['snippet']['publishedAt']
-        description = SubElement(item, 'description')
-        description.text = v['snippet']['description']
 
-    if len(sys.argv) >= 3:
-        filename = sys.argv[2]
-        f = open(filename, 'w')
+def parse_duration(duration):
+    duration = DURATION.match(duration).groupdict()
+    result = ""
+    hours = 0
+    if duration['years'] is not None:
+        result += duration['years'] + 'y '
+    if duration['weeks'] is not None:
+        result += duration['weeks'] + 'w '
+    if duration['days'] is not None:
+        hours += int(duration['days']) * 24
+    if duration['hours'] is not None or hours != 0:
+        result += repr(int(duration['hours']) + hours) + ':'
+    if duration['minutes'] is not None:
+        if len(duration['minutes']) == 1:
+            result += '0'
+        result += duration['minutes'] + ':'
     else:
-        f = sys.stdout
+        result += '00:'
+    if duration['seconds'] is not None:
+        if len(duration['seconds']) == 1:
+            result += '0'
+        result += duration['seconds']
+    else:
+        result += '00'
 
-    f.write('<?xml version="1.0" encoding="UTF-8" ?>')
-    f.write(tostring(rss).encode('utf-8'))
-    f.close()
-
+    return result
 
 
 if __name__ == '__main__':
-    for i in range(3):
-        try:
-            do_it()
-        except urllib2.HTTPError, error:
-            if error.code == 500:
-                continue
-            raise error
-        break
-
+    if not len(sys.argv) >= 2:
+        print("username and (optionally) destination file must be specified as first and second arguments.")
+        sys.exit(-1)
+    # check for missing inputs
+    if not API_KEY:
+        print("YOUTUBE_SERVER_API_KEY variable missing.")
+        sys.exit(-1)
+    do_it()

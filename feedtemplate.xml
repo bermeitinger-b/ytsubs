@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+    <title type="text">YouTube</title>
+    <updated>{{update_time}}</updated>
+    <id>https://www.youtube.com</id>
+    <logo>https://www.youtube.com/favicon.ico</logo>
+    <link rel="alternate" type="text/html" href="https://www.youtube.com" />
+    <author>
+        <name>{{user}}</name>
+    </author>
+    {%for entry in entries %}
+    <entry>
+        <title>{{entry['title']}}</title>
+        <link href="{{entry['link']}}"/>
+        <author>
+            <name>{{entry['author']}}</name>
+        </author>
+        <published>{{entry['pubDate']}}</published>
+        <content type="xhtml">
+            <div xmlns="http://www.w3.org/1999/xhtml">
+                <a href="{{entry['link']}}">
+                    <img src="{{entry['thumbnail']}}" alt="{{entry['title']}}" height="180" width="320" /><br />
+                    {{entry['duration']}}
+                </a>
+                <p>{{entry['description']}}</p>
+            </div>
+        </content>
+    </entry>
+    {%endfor%}
+</feed>
