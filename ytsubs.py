@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 # Copyright (C) 2014 Alistair Buxton <a.j.buxton@gmail.com>
 #
@@ -28,33 +28,36 @@ import html
 import os
 import re
 import sys
+from itertools import batched
+from pathlib import Path
 
 import jinja2
 import requests.api
 
-BASE_URL = "https://www.googleapis.com/youtube/v3"
-API_KEY = os.environ.get("YOUTUBE_SERVER_API_KEY")
-FEED_TEMPLATE = "feedtemplate.xml"
-UPDATE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
+BASE_URL: str = "https://www.googleapis.com/youtube/v3"
 
-MAX_DESCRIPTION_LENGTH = 200
+FEED_TEMPLATE: str = "feedtemplate.xml"
+UPDATE_TIME_FORMAT: str = "%Y-%m-%dT%H:%M:%S%z"
+
+MAX_DESCRIPTION_LENGTH: int = 800
+MAX_RESULTS: int = 50
 
 DURATION = re.compile(
-    "P"  # designates a period
-    "(?:(?P<years>\d+)Y)?"  # years
-    "(?:(?P<months>\d+)M)?"  # months
-    "(?:(?P<weeks>\d+)W)?"  # weeks
-    "(?:(?P<days>\d+)D)?"  # days
-    "(?:T"  # time part must begin with a T
-    "(?:(?P<hours>\d+)H)?"  # hourss
-    "(?:(?P<minutes>\d+)M)?"  # minutes
-    "(?:(?P<seconds>\d+)S)?"  # seconds
-    ")?"  # end of time part
+    r"P"  # designates a period
+    r"(?:(?P<years>\d+)Y)?"  # years
+    r"(?:(?P<months>\d+)M)?"  # months
+    r"(?:(?P<weeks>\d+)W)?"  # weeks
+    r"(?:(?P<days>\d+)D)?"  # days
+    r"(?:T"  # time part must begin with a T
+    r"(?:(?P<hours>\d+)H)?"  # hourss
+    r"(?:(?P<minutes>\d+)M)?"  # minutes
+    r"(?:(?P<seconds>\d+)S)?"  # seconds
+    r")?"  # end of time part
 )
 
 
 def get_channel_for_user(user):
-    url = BASE_URL + "/channels?part=id&forUsername=" + user + "&key=" + API_KEY
+    url = f"{BASE_URL}/channels?part=id&forUsername={user}&key={API_KEY}"
     response = requests.api.request("GET", url)
     data = response.json()
     return data["items"][0]["id"]
@@ -65,12 +68,13 @@ def get_playlists(channel):
     # we have to get the full snippet here, because there is no other way to get the channelId
     # of the channels you're subscribed to. 'id' returns a subscription id, which can only be
     # used to subsequently get the full snippet, so we may as well just get the whole lot up front.
+
+    # convert to f-string:
     url = (
-        BASE_URL
-        + "/subscriptions?part=snippet&channelId="
-        + channel
-        + "&maxResults=50&key="
-        + API_KEY
+        f"{BASE_URL}/subscriptions?part=snippet"
+        f"&channelId={channel}"
+        f"&maxResults={MAX_RESULTS}"
+        f"&key={API_KEY}"
     )
 
     next_page = ""
@@ -87,11 +91,10 @@ def get_playlists(channel):
         # actually getting the channel uploads requires knowing the upload playlist ID, which means
         # another request. luckily we can bulk these 50 at a time.
         purl = (
-            BASE_URL
-            + "/channels?part=contentDetails&id="
-            + "%2C".join(subs)
-            + "&maxResults=50&key="
-            + API_KEY
+            f"{BASE_URL}/channels?part=contentDetails"
+            f"&id={'%2C'.join(subs)}"
+            f"&maxResults={MAX_RESULTS}"
+            f"&key={API_KEY}"
         )
         response = requests.api.request("GET", purl)
         data2 = response.json()
@@ -102,7 +105,7 @@ def get_playlists(channel):
                 pass
 
         try:  # loop until there are no more pages
-            next_page = "&pageToken=" + data["nextPageToken"]
+            next_page = f"&pageToken={data['nextPageToken']}"
         except KeyError:
             break
 
@@ -115,43 +118,32 @@ def get_playlist_items(playlist):
     if playlist:
         # get the last 5 videos uploaded to the playlist
         url = (
-            BASE_URL
-            + "/playlistItems?part=contentDetails&playlistId="
-            + playlist
-            + "&maxResults=5&key="
-            + API_KEY
+            f"{BASE_URL}/playlistItems?part=contentDetails"
+            f"&playlistId={playlist}"
+            f"&maxResults=5"
+            f"&key={API_KEY}"
         )
         response = requests.api.request("GET", url)
         data = response.json()
-        if "items" not in data:
-            print("items are not in data; try against next time")
-            sys.exit(-1)
-        for i in data["items"]:
-            if i["kind"] == "youtube#playlistItem":
-                videos.append(i["contentDetails"]["videoId"])
+        if "items" in data:
+            for i in data["items"]:
+                if i["kind"] == "youtube#playlistItem":
+                    videos.append(i["contentDetails"]["videoId"])
 
     return videos
 
 
 def get_real_videos(video_ids):
     purl = (
-        BASE_URL
-        + "/videos?part=snippet%2CcontentDetails&id="
-        + "%2C".join(video_ids)
-        + "&maxResults=50&fields=items(contentDetails%2Cid%2Ckind%2Csnippet)"
-        + "&key="
-        + API_KEY
+        f"{BASE_URL}/videos?part=snippet%2CcontentDetails"
+        f"&id={'%2C'.join(video_ids)}"
+        f"&maxResults={MAX_RESULTS}&fields=items(contentDetails%2Cid%2Ckind%2Csnippet)"
+        f"&key={API_KEY}"
     )
     response = requests.api.request("GET", purl)
     data = response.json()
 
     return data["items"]
-
-
-def chunks(l, n):
-    """Yield successive n-sized chunks from l."""
-    for i in range(0, len(l), n):
-        yield l[i : i + n]
 
 
 def do_it():
@@ -168,7 +160,7 @@ def do_it():
     # the playlist items don't contain the correct published date, so now
     # we have to fetch every video in batches of 50.
     allvids = []
-    for chunk in chunks(allitems, 50):
+    for chunk in batched(allitems, MAX_RESULTS):
         allvids.extend(get_real_videos(chunk))
 
     # build the atom feed
@@ -177,7 +169,7 @@ def do_it():
     entries = []
 
     for v in sorted(allvids, key=lambda k: k["snippet"]["publishedAt"], reverse=True)[
-        :50
+        :MAX_RESULTS
     ]:
         entries.append(
             {
@@ -248,9 +240,12 @@ if __name__ == "__main__":
         print(
             "username and (optionally) destination file must be specified as first and second arguments."
         )
-        sys.exit(-1)
+        raise SystemError(1)
     # check for missing inputs
-    if not API_KEY:
-        print("YOUTUBE_SERVER_API_KEY variable missing.")
-        sys.exit(-1)
+    API_KEY: str | None = os.environ.get("YOUTUBE_SERVER_API_KEY")
+    if API_KEY is None:
+        print("Failed to load API_KEY")
+        raise SystemError(1)
+    if (api_file := Path(API_KEY)).is_file():
+        API_KEY = api_file.read_text().strip()
     do_it()
