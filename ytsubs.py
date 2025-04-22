@@ -23,40 +23,41 @@
 # OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-import requests.api
-import os
-import sys
-import jinja2
 import datetime
 import html
+import os
 import re
+import sys
 
-BASE_URL = 'https://www.googleapis.com/youtube/v3'
-API_KEY = os.environ.get('YOUTUBE_SERVER_API_KEY')
-FEED_TEMPLATE = 'feedtemplate.xml'
+import jinja2
+import requests.api
+
+BASE_URL = "https://www.googleapis.com/youtube/v3"
+API_KEY = os.environ.get("YOUTUBE_SERVER_API_KEY")
+FEED_TEMPLATE = "feedtemplate.xml"
 UPDATE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
 
 MAX_DESCRIPTION_LENGTH = 200
 
 DURATION = re.compile(
-    'P'   # designates a period
-    '(?:(?P<years>\d+)Y)?'   # years
-    '(?:(?P<months>\d+)M)?'  # months
-    '(?:(?P<weeks>\d+)W)?'   # weeks
-    '(?:(?P<days>\d+)D)?'    # days
-    '(?:T' # time part must begin with a T
-    '(?:(?P<hours>\d+)H)?'   # hourss
-    '(?:(?P<minutes>\d+)M)?' # minutes
-    '(?:(?P<seconds>\d+)S)?' # seconds
-    ')?'   # end of time part
+    "P"  # designates a period
+    "(?:(?P<years>\d+)Y)?"  # years
+    "(?:(?P<months>\d+)M)?"  # months
+    "(?:(?P<weeks>\d+)W)?"  # weeks
+    "(?:(?P<days>\d+)D)?"  # days
+    "(?:T"  # time part must begin with a T
+    "(?:(?P<hours>\d+)H)?"  # hourss
+    "(?:(?P<minutes>\d+)M)?"  # minutes
+    "(?:(?P<seconds>\d+)S)?"  # seconds
+    ")?"  # end of time part
 )
 
 
 def get_channel_for_user(user):
-    url = BASE_URL + '/channels?part=id&forUsername=' + user + '&key=' + API_KEY
-    response = requests.api.request('GET', url)
+    url = BASE_URL + "/channels?part=id&forUsername=" + user + "&key=" + API_KEY
+    response = requests.api.request("GET", url)
     data = response.json()
-    return data['items'][0]['id']
+    return data["items"][0]["id"]
 
 
 def get_playlists(channel):
@@ -64,32 +65,44 @@ def get_playlists(channel):
     # we have to get the full snippet here, because there is no other way to get the channelId
     # of the channels you're subscribed to. 'id' returns a subscription id, which can only be
     # used to subsequently get the full snippet, so we may as well just get the whole lot up front.
-    url = BASE_URL + '/subscriptions?part=snippet&channelId=' + channel + '&maxResults=50&key=' + API_KEY
+    url = (
+        BASE_URL
+        + "/subscriptions?part=snippet&channelId="
+        + channel
+        + "&maxResults=50&key="
+        + API_KEY
+    )
 
-    next_page = ''
+    next_page = ""
     while True:
         # we are limited to 50 results. if the user subscribed to more than 50 channels
         # we have to make multiple requests here.
-        response = requests.api.request('GET', url + next_page)
+        response = requests.api.request("GET", url + next_page)
         data = response.json()
         subs = []
-        for i in data['items']:
-            if i['kind'] == 'youtube#subscription':
-                subs.append(i['snippet']['resourceId']['channelId'])
+        for i in data["items"]:
+            if i["kind"] == "youtube#subscription":
+                subs.append(i["snippet"]["resourceId"]["channelId"])
 
         # actually getting the channel uploads requires knowing the upload playlist ID, which means
         # another request. luckily we can bulk these 50 at a time.
-        purl = BASE_URL + '/channels?part=contentDetails&id=' + '%2C'.join(subs) + '&maxResults=50&key=' + API_KEY
-        response = requests.api.request('GET', purl)
+        purl = (
+            BASE_URL
+            + "/channels?part=contentDetails&id="
+            + "%2C".join(subs)
+            + "&maxResults=50&key="
+            + API_KEY
+        )
+        response = requests.api.request("GET", purl)
         data2 = response.json()
-        for i in data2['items']:
+        for i in data2["items"]:
             try:
-                playlists.append(i['contentDetails']['relatedPlaylists']['uploads'])
+                playlists.append(i["contentDetails"]["relatedPlaylists"]["uploads"])
             except KeyError:
                 pass
 
         try:  # loop until there are no more pages
-            next_page = '&pageToken=' + data['nextPageToken']
+            next_page = "&pageToken=" + data["nextPageToken"]
         except KeyError:
             break
 
@@ -101,35 +114,44 @@ def get_playlist_items(playlist):
 
     if playlist:
         # get the last 5 videos uploaded to the playlist
-        url = BASE_URL + '/playlistItems?part=contentDetails&playlistId=' + playlist + '&maxResults=5&key=' + API_KEY
-        response = requests.api.request('GET', url)
+        url = (
+            BASE_URL
+            + "/playlistItems?part=contentDetails&playlistId="
+            + playlist
+            + "&maxResults=5&key="
+            + API_KEY
+        )
+        response = requests.api.request("GET", url)
         data = response.json()
-        if 'items' not in data:
-            print('items are not in data; try against next time')
+        if "items" not in data:
+            print("items are not in data; try against next time")
             sys.exit(-1)
-        for i in data['items']:
-            if i['kind'] == 'youtube#playlistItem':
-                videos.append(i['contentDetails']['videoId'])
+        for i in data["items"]:
+            if i["kind"] == "youtube#playlistItem":
+                videos.append(i["contentDetails"]["videoId"])
 
     return videos
 
 
 def get_real_videos(video_ids):
-    purl = BASE_URL + '/videos?part=snippet%2CcontentDetails&id='\
-                    + '%2C'.join(video_ids)\
-                    + '&maxResults=50&fields=items(contentDetails%2Cid%2Ckind%2Csnippet)'\
-                    + '&key=' + API_KEY
-    response = requests.api.request('GET', purl)
+    purl = (
+        BASE_URL
+        + "/videos?part=snippet%2CcontentDetails&id="
+        + "%2C".join(video_ids)
+        + "&maxResults=50&fields=items(contentDetails%2Cid%2Ckind%2Csnippet)"
+        + "&key="
+        + API_KEY
+    )
+    response = requests.api.request("GET", purl)
     data = response.json()
 
-    return data['items']
+    return data["items"]
 
 
 def chunks(l, n):
-    """ Yield successive n-sized chunks from l.
-    """
+    """Yield successive n-sized chunks from l."""
     for i in range(0, len(l), n):
-        yield l[i:i + n]
+        yield l[i : i + n]
 
 
 def do_it():
@@ -154,23 +176,29 @@ def do_it():
 
     entries = []
 
-    for v in sorted(allvids, key=lambda k: k['snippet']['publishedAt'], reverse=True)[:50]:
-        entries.append({
-            'title': html.escape(v['snippet']['title']),
-            'link': 'https://youtube.com/watch?v=' + v['id'],
-            'author': html.escape(v['snippet']['channelTitle']),
-            'pubDate': v['snippet']['publishedAt'],
-            'description': parse_description(v['snippet']['description']),
-            'thumbnail': v['snippet']['thumbnails']['medium']['url'],
-            'duration': parse_duration(v['contentDetails']['duration'])
-        })
+    for v in sorted(allvids, key=lambda k: k["snippet"]["publishedAt"], reverse=True)[
+        :50
+    ]:
+        entries.append(
+            {
+                "title": html.escape(v["snippet"]["title"]),
+                "link": "https://youtube.com/watch?v=" + v["id"],
+                "author": html.escape(v["snippet"]["channelTitle"]),
+                "pubDate": v["snippet"]["publishedAt"],
+                "description": parse_description(v["snippet"]["description"]),
+                "thumbnail": v["snippet"]["thumbnails"]["medium"]["url"],
+                "duration": parse_duration(v["contentDetails"]["duration"]),
+            }
+        )
 
-    with open(sys.argv[2], mode='w') as f:
-        f.write(env.get_template(FEED_TEMPLATE).render(
-            user=username,
-            update_time=datetime.datetime.now().strftime(UPDATE_TIME_FORMAT),
-            entries=entries
-        ))
+    with open(sys.argv[2], mode="w") as f:
+        f.write(
+            env.get_template(FEED_TEMPLATE).render(
+                user=username,
+                update_time=datetime.datetime.now().strftime(UPDATE_TIME_FORMAT),
+                entries=entries,
+            )
+        )
 
 
 def parse_description(description):
@@ -179,41 +207,47 @@ def parse_description(description):
     # 2. if longer than max length, cut and add dots
     # 3. escape html stuff
     # 4. replace \n newlines with <br />
-    description = description if len(description) <= MAX_DESCRIPTION_LENGTH else description[:MAX_DESCRIPTION_LENGTH] + "…"
-    return html.escape(description).replace('\n', '<br />')
+    description = (
+        description
+        if len(description) <= MAX_DESCRIPTION_LENGTH
+        else description[:MAX_DESCRIPTION_LENGTH] + "…"
+    )
+    return html.escape(description).replace("\n", "<br />")
 
 
 def parse_duration(duration):
     duration = DURATION.match(duration).groupdict()
     result = ""
     hours = 0
-    if duration['years'] is not None:
-        result += duration['years'] + 'y '
-    if duration['weeks'] is not None:
-        result += duration['weeks'] + 'w '
-    if duration['days'] is not None:
-        hours += int(duration['days']) * 24
-    if duration['hours'] is not None or hours != 0:
-        result += repr(int(duration['hours']) + hours) + ':'
-    if duration['minutes'] is not None:
-        if len(duration['minutes']) == 1:
-            result += '0'
-        result += duration['minutes'] + ':'
+    if duration["years"] is not None:
+        result += duration["years"] + "y "
+    if duration["weeks"] is not None:
+        result += duration["weeks"] + "w "
+    if duration["days"] is not None:
+        hours += int(duration["days"]) * 24
+    if duration["hours"] is not None or hours != 0:
+        result += repr(int(duration["hours"]) + hours) + ":"
+    if duration["minutes"] is not None:
+        if len(duration["minutes"]) == 1:
+            result += "0"
+        result += duration["minutes"] + ":"
     else:
-        result += '00:'
-    if duration['seconds'] is not None:
-        if len(duration['seconds']) == 1:
-            result += '0'
-        result += duration['seconds']
+        result += "00:"
+    if duration["seconds"] is not None:
+        if len(duration["seconds"]) == 1:
+            result += "0"
+        result += duration["seconds"]
     else:
-        result += '00'
+        result += "00"
 
     return result
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     if not len(sys.argv) >= 2:
-        print("username and (optionally) destination file must be specified as first and second arguments.")
+        print(
+            "username and (optionally) destination file must be specified as first and second arguments."
+        )
         sys.exit(-1)
     # check for missing inputs
     if not API_KEY:
